@@ -31,8 +31,7 @@ RUN find -L /opt/views/view/* -type f -exec readlink -f '{}' \; | \
 # Modifications to the environment that are necessary to run
 RUN cd /opt/spack-environment && \
     spack env activate --sh -d . > activate.sh
-
-
+    
 # Bare OS image to run the installed executables
 FROM docker.io/rockylinux:8
 
@@ -54,6 +53,8 @@ RUN { \
 RUN dnf update -y && dnf install -y epel-release && dnf update -y \
  && dnf install -y libgfortran \
  && rm -rf /var/cache/dnf && dnf clean all
+
+ENV PATH="/opt/view/bin:$PATH"
 LABEL "mpi"="openmpi"
 ENTRYPOINT [ "/entrypoint.sh" ]
 CMD [ "/bin/bash" ]
