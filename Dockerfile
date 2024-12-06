@@ -1,61 +1,39 @@
-# Build stage with Spack pre-installed and ready to be used
-FROM spack/rockylinux8:latest as builder
+# Use the official Ubuntu 20.04 image as the base
+FROM ubuntu:20.04
 
+# Set environment variables
+ENV OMPI_DIR=/opt/ompi \
+    OMPI_VERSION=4.1.7 \
+    OMPI_URL=https://download.open-mpi.org/release/open-mpi/v4.1/openmpi-4.1.7.tar.bz2 \
+    TZ=America/Indiana/Indianapolis \
+    OMPI_MCA_btl_vader_single_copy_mechanism=none \
+    OMPI_MCA_btl_openib_allow_ib=1
 
-# What we want to install and how we want to install it
-# is specified in a manifest file (spack.yaml)
-RUN mkdir -p /opt/spack-environment && \
-set -o noclobber \
-&&  (echo spack: \
-&&   echo '  specs:' \
-&&   echo '  - osu-micro-benchmarks' \
-&&   echo '  - openmpi@4.1.6 fabrics=ofi +pmi +legacylaunchers' \
-&&   echo '  - libfabric fabrics=sockets,tcp,udp,psm2,verbs' \
-&&   echo '  concretizer:' \
-&&   echo '    unify: true' \
-&&   echo '  config:' \
-&&   echo '    install_tree: /opt/software' \
-&&   echo '  view: /opt/views/view') > /opt/spack-environment/spack.yaml
+# Update the system and install required packages
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    wget git bash gcc gfortran g++ make file cmake hwloc libpmi2-0 libpmi2-0-dev \
+    libglpk-dev libzip-dev libarmadillo-dev libboost-all-dev libblas-dev liblapack-dev && \
+    echo "Installing Open MPI" && \
+    mkdir -p /tmp/ompi /opt && \
+    cd /tmp/ompi && \
+    wget --no-check-certificate -O openmpi-$OMPI_VERSION.tar.bz2 $OMPI_URL && \
+    tar -xjf openmpi-$OMPI_VERSION.tar.bz2 && \
+    cd openmpi-$OMPI_VERSION && \
+    ./configure --prefix=$OMPI_DIR --with-hwloc=internal --with-slurm --with-pmi=/usr --with-pmi-libdir=/usr/lib/x86_64-linux-gnu && \
+    make -j$(nproc) install && \
+    echo "Compiling the MPI application..." && \
+    export PATH=$OMPI_DIR/bin:$PATH && \
+    export LD_LIBRARY_PATH=$OMPI_DIR/lib:$LD_LIBRARY_PATH && \
+    cd /opt && \
+    # Clean up
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/ompi
 
-# Install the software, remove unnecessary deps
-RUN  source /opt/spack/share/spack/setup-env.sh \ 
-    && cd /opt/spack-environment && spack env activate . && spack install --fail-fast && spack gc -y
-
-# Strip all the binaries
-RUN find -L /opt/views/view/* -type f -exec readlink -f '{}' \; | \
-    xargs file -i | \
-    grep 'charset=binary' | \
-    grep 'x-executable\|x-archive\|x-sharedlib' | \
-    awk -F: '{print $1}' | xargs strip
-
-# Modifications to the environment that are necessary to run
-RUN cd /opt/spack-environment && \
-    spack env activate --sh -d . > activate.sh
-    
-# Bare OS image to run the installed executables
-FROM docker.io/rockylinux:8
-
-COPY --from=builder /opt/spack-environment /opt/spack-environment
-COPY --from=builder /opt/software /opt/software
-
-# paths.view is a symlink, so copy the parent to avoid dereferencing and duplicating it
-COPY --from=builder /opt/views /opt/views
-
-RUN { \
-      echo '#!/bin/sh' \
-      && echo '.' /opt/spack-environment/activate.sh \
-      && echo 'exec "$@"'; \
-    } > /entrypoint.sh \
-&& chmod a+x /entrypoint.sh \
-&& ln -s /opt/views/view /opt/view
-
-
-RUN dnf update -y && dnf install -y epel-release && dnf update -y \
- && dnf install -y libgfortran \
- && rm -rf /var/cache/dnf && dnf clean all
-
-ENV PATH="/opt/view/bin:$PATH"
-LABEL "mpi"="openmpi"
-ENTRYPOINT [ "/entrypoint.sh" ]
-CMD [ "/bin/bash" ]
-
+# Add Open MPI environment variables to PATH
+ENV PATH="$OMPI_DIR/bin:$PATH" \
+    LD_LIBRARY_PATH="$OMPI_DIR/lib:$LD_LIBRARY_PATH" \
+    MANPATH="$OMPI_DIR/share/man:$MANPATH" \
+    OMPI_MCA_btl=tcp,self
+# Set the default command
+CMD ["/bin/bash"]
