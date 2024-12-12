@@ -1,6 +1,9 @@
 # Use the official Ubuntu 20.04 image as the base
 FROM ubuntu:20.04
 
+%files
+  mpitest.cpp /opt
+
 # Set environment variables
 ENV OMPI_DIR=/opt/ompi \
     OMPI_VERSION=4.1.7 \
@@ -30,6 +33,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone &
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/ompi
 
+RUN cd /opt && mpic++ -o /opt/ompi/bin/mpitest mpitest.cpp
 # Add Open MPI environment variables to PATH
 ENV PATH="$OMPI_DIR/bin:$PATH" \
     LD_LIBRARY_PATH="$OMPI_DIR/lib:$LD_LIBRARY_PATH" \
