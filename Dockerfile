@@ -1,8 +1,8 @@
 # Use the official Ubuntu 20.04 image as the base
 FROM ubuntu:20.04
 
-%files
-  mpitest.cpp /opt
+# Copy mpitest file into container
+COPY  mpitest.cpp /opt
 
 # Set environment variables
 ENV OMPI_DIR=/opt/ompi \
